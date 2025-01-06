@@ -1,0 +1,28 @@
+#cloud-config
+package_update: true
+output: {all: '| tee -a /var/log/cloud-init-output.log'}
+packages:
+  - docker.io
+  - docker-compose
+
+write_files:
+  - path: /opt/docker-swarm-join.sh
+    permissions: '0777'
+    content: |
+      #!/bin/bash
+      manager_private_ip="${manger_private_ip}"
+      echo "Waiting for the Swarm token to become available from $manager_private_ip..."
+      until TOKEN=$(curl -s http://$manager_private_ip:8080/docker_token.txt); do
+          echo "Retrying to fetch Swarm token from $manager_private_ip..."
+          sleep 5
+      done
+      echo "Swarm token retrieved: $TOKEN"
+      docker swarm join --token $TOKEN $manager_private_ip:2377
+      echo "Worker node successfully joined the Docker Swarm."
+
+runcmd:
+  - sudo yum update -y
+  - sudo yum install -y docker
+  - sudo systemctl start docker
+  - sudo systemctl enable docker
+  - sudo /opt/docker-swarm-join.sh

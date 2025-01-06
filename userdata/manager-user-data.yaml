@@ -1,0 +1,82 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose
+
+write_files:
+  - path: /root/docker-stack.yml
+    permissions: '0644'
+    owner: root:root
+    content: |
+      version: '3.9'
+
+      services:
+        redis:
+          image: redis:alpine
+          networks:
+            - frontend
+
+        db:
+          image: postgres:15-alpine
+          environment:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+          volumes:
+            - db-data:/var/lib/postgresql/data
+          networks:
+            - backend
+
+        vote:
+          image: dockersamples/examplevotingapp_vote
+          ports:
+            - 80:80
+          networks:
+            - frontend
+          deploy:
+            replicas: 2
+            placement:
+              constraints:
+                - "node.role==worker"
+              max_replicas_per_node: 1
+
+        result:
+          image: dockersamples/examplevotingapp_result
+          ports:
+            - 81:80
+          networks:
+            - backend
+          deploy:
+            placement:
+              constraints:
+                - "node.role==worker"
+
+        worker:
+          image: dockersamples/examplevotingapp_worker
+          networks:
+            - frontend
+            - backend
+          deploy:
+            replicas: 2
+            placement:
+              constraints:
+                - "node.role==worker"
+              max_replicas_per_node: 1
+
+      networks:
+        frontend:
+        backend:
+
+      volumes:
+        db-data:
+
+runcmd:
+  - sudo yum update -y
+  - sudo yum install -y docker
+  - sudo systemctl start docker
+  - sudo systemctl enable docker
+  - sudo docker swarm init
+  - docker swarm join-token -q worker > /tmp/docker_token.txt
+  - nohup python3 -m http.server 8080 --bind 0.0.0.0 --directory /tmp > /dev/null 2>&1 &
+  - docker stack deploy -c /root/docker-stack.yml votingapp
+
